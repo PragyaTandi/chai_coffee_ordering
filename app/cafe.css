@@ -94,7 +94,10 @@
   .header-inner { padding:0 16px; gap:8px; }
   .brand strong { font-size:18px; }
   .brand small { font-size:5.5px; }
-  .mobile-staff-link,.track-order-link { display:none; }
+  .mobile-staff-link { display:none; }
+  .track-order-link { display:inline-flex; align-items:center; gap:4px; min-height:36px; padding:0 5px; border:1px solid #d9a441; border-radius:3px; background:#d9a441; color:#1f2020; font-size:9px; }
+  .track-order-link:hover { background:#e6b858; color:#1f2020; }
+  .track-order-link:focus-visible { outline:2px solid #1f2020; outline-offset:2px; }
   .header-right { gap:8px; }
   .table-pill { gap:5px; padding:7px; font-size:7px; }
   .hero-bottom { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 12px; left:20px; right:20px; }
