@@ -1,0 +1,138 @@
+import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
+import { IconArrowLeft, IconArrowRight, IconCheck, IconChevronDown, IconClock, IconCoffee, IconMinus, IconPlus, IconSearch, IconShoppingBag, IconX } from "@tabler/icons-react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Form, Link, useNavigate, useParams, useSearchParams } from "react-router";
+
+type Product = { id: string; name: string; description: string; category: string; price: number; image: string; tag: string };
+type Line = { product: Product; quantity: number };
+type Order = { id: string; tableNumber: number; customerName: string; instructions: string; paymentMethod: string; paymentStatus: string; status: string; total: number; estimatedMinutes: number | null; createdAt: string; items: { id: string; name: string; price: number; quantity: number }[] };
+type CartContext = { cart: Line[]; add: (p: Product) => void; change: (id: string, amount: number) => void; clear: () => void; open: boolean; setOpen: (open: boolean) => void; trackingId: string | null; setTrackingId: (id: string) => void };
+const Cart = createContext<CartContext>(null!);
+const categories = ["All", "Chai & Tea", "Coffee", "Cold Drinks", "Snacks", "Desserts"];
+const money = (n: number) => `₹${n}`;
+const orderNumber = (id: string) => `#${id.slice(0, 6).toUpperCase()}`;
+const tableLabel = (table: number) => String(table).padStart(2, "0");
+
+export function CafeProvider({ children }: { children: ReactNode }) {
+  const [cart, setCart] = useState<Line[]>([]);
+  const [open, setOpen] = useState(false);
+  const [trackingId, setTrackingIdState] = useState<string | null>(null);
+  useEffect(() => setTrackingIdState(localStorage.getItem("after-hours-order-id")), []);
+  const setTrackingId = (id: string) => {
+    localStorage.setItem("after-hours-order-id", id);
+    setTrackingIdState(id);
+  };
+  const add = (product: Product) => setCart((old) => old.some((line) => line.product.id === product.id) ? old.map((line) => line.product.id === product.id ? { ...line, quantity: line.quantity + 1 } : line) : [...old, { product, quantity: 1 }]);
+  const change = (id: string, amount: number) => setCart((old) => old.map((line) => line.product.id === id ? { ...line, quantity: line.quantity + amount } : line).filter((line) => line.quantity > 0));
+  return <Cart.Provider value={{ cart, add, change, clear: () => setCart([]), open, setOpen, trackingId, setTrackingId }}>{children}</Cart.Provider>;
+}
+
+function useTable() {
+  const [params] = useSearchParams();
+  const number = Number(params.get("table"));
+  return Number.isInteger(number) && number > 0 ? number : 7;
+}
+function useProducts() { return useActionQuery<Product[]>("list-products", {}).data ?? []; }
+function useStaffOrders(enabled: boolean) { return useActionQuery<Order[]>("list-orders", {}, { enabled, refetchInterval: 5000 }).data ?? []; }
+function useOrder(id: string) { return useActionQuery<Order | null>("get-order", { id }, { enabled: Boolean(id), refetchInterval: 5000 }).data ?? null; }
+
+function TablePicker({ table, editable }: { table: number; editable: boolean }) {
+  const [, setSearchParams] = useSearchParams();
+  const [draft, setDraft] = useState(String(table));
+  const picker = useRef<HTMLDetailsElement>(null);
+  useEffect(() => setDraft(String(table)), [table]);
+  if (!editable) return <span className="table-pill"><span className="table-dot"/> TABLE {tableLabel(table)}</span>;
+  return <details ref={picker} className="table-picker">
+    <summary className="table-pill" aria-label={`Change table number, currently ${tableLabel(table)}`}><span className="table-dot"/> TABLE {tableLabel(table)} <IconChevronDown size={13}/></summary>
+    <form className="table-picker-popover" onSubmit={(event) => {
+      event.preventDefault();
+      const nextTable = Number(draft);
+      if (!Number.isInteger(nextTable) || nextTable < 1) return;
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.set("table", String(nextTable));
+        return next;
+      });
+      if (picker.current) picker.current.open = false;
+    }}>
+      <label htmlFor="table-number">Your table</label>
+      <input id="table-number" type="number" min="1" step="1" required value={draft} onChange={(event) => setDraft(event.target.value)} />
+      <button type="submit">Update table</button>
+    </form>
+  </details>;
+}
+
+function Brand({ light = false }: { light?: boolean }) {
+  return <Link to="/" className={`brand ${light ? "brand-light" : ""}`} aria-label="After Hours home"><span className="brand-mark"><IconCoffee size={20} stroke={1.6}/></span><span><strong>after hours<span className="brand-dot">.</span></strong><small>CHAI · COFFEE · COMPANY</small></span></Link>;
+}
+function Header({ table, dark = false, editable = true }: { table: number; dark?: boolean; editable?: boolean }) {
+  const { cart, setOpen, trackingId } = useContext(Cart);
+  const count = cart.reduce((sum, line) => sum + line.quantity, 0);
+  return <header className={`site-header ${dark ? "header-dark" : ""}`}><div className="header-inner"><Brand light={dark}/><nav className="header-nav"><Link to={`/menu?table=${table}`}>Our menu</Link><a href="/#our-story">Our story</a><Link to="/staff">For staff</Link></nav><div className="header-right">{trackingId && <Link className="track-order-link" to={`/order/${trackingId}?table=${table}`}>Track order <IconArrowRight size={15}/></Link>}<Link className="mobile-staff-link" to="/staff">Staff</Link><TablePicker table={table} editable={editable}/><button className="bag-button" onClick={() => setOpen(true)} aria-label={`Open cart, ${count} items`}><IconShoppingBag size={20} stroke={1.6}/><span>{count}</span></button></div></div></header>;
+}
+function Footer() { return <footer className="footer" id="our-story"><div className="footer-inner"><div><Brand light/><p>Good things happen when you stay a little longer.</p></div><div className="footer-note">PULL UP A CHAIR. STAY A WHILE.<br/><span>Made for slow evenings & good company.</span></div></div><div className="footer-bottom"><span>© AFTER HOURS CAFÉ</span><span>CHAI, CONVERSATIONS & EVERYTHING IN BETWEEN</span></div></footer>; }
+function CartDrawer({ table }: { table: number }) {
+  const { cart, change, open, setOpen } = useContext(Cart);
+  const total = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
+  if (!open) return null;
+  return <div className="drawer-backdrop" onClick={() => setOpen(false)}><aside className="drawer" onClick={(e) => e.stopPropagation()} aria-label="Your order"><div className="drawer-head"><div><span className="eyebrow">A LITTLE SOMETHING FOR YOU</span><h2>Your order<span className="gold">.</span></h2></div><button className="icon-button" onClick={() => setOpen(false)} aria-label="Close cart"><IconX/></button></div><p className="drawer-sub">Something good is on its way.</p><div className="drawer-lines">{cart.length === 0 ? <div className="empty-cart"><IconCoffee size={42} stroke={1}/><p>Nothing here just yet.</p><span>Find something lovely on the menu.</span></div> : cart.map(({ product, quantity }) => <div className="cart-line" key={product.id}><img src={product.image} alt=""/><div className="cart-line-info"><strong>{product.name}</strong><span>{money(product.price)}</span><div className="quantity"><button onClick={() => change(product.id, -1)} aria-label={`Remove one ${product.name}`}><IconMinus size={14}/></button><span>{quantity}</span><button onClick={() => change(product.id, 1)} aria-label={`Add one ${product.name}`}><IconPlus size={14}/></button></div></div><strong>{money(product.price * quantity)}</strong></div>)}</div><div className="drawer-bottom"><div className="total-row"><span>Subtotal</span><strong>{money(total)}</strong></div><p>Good food, good company. No rush.</p><Link className={`button button-gold full ${!cart.length ? "disabled" : ""}`} to={`/checkout?table=${table}`} onClick={(e) => { if (!cart.length) e.preventDefault(); else setOpen(false); }}>Continue to checkout <IconArrowRight size={18}/></Link></div></aside></div>;
+}
+function MenuSection({ table, standalone = false }: { table: number; standalone?: boolean }) {
+  const products = useProducts();
+  const { add, cart, change, setOpen } = useContext(Cart);
+  const [category, setCategory] = useState("All");
+  const [search, setSearch] = useState("");
+  const filtered = useMemo(() => products.filter((p) => (category === "All" || p.category === category) && `${p.name} ${p.description}`.toLowerCase().includes(search.toLowerCase())), [products, category, search]);
+  const count = cart.reduce((sum, line) => sum + line.quantity, 0);
+  return <section className={`menu-section ${standalone ? "menu-standalone" : ""}`} id="menu"><div className="menu-inner"><div className="menu-intro"><div><div className="section-kicker"><span/> A LITTLE SOMETHING FOR EVERYONE</div><h2>Come hungry.<br/><em>Stay a little longer.</em></h2><p>Good food, warm cups and the kind of conversations<br className="desktop-only"/> that turn into your favourite memories.</p></div><div className="menu-stamp"><span>MADE WITH</span><IconCoffee size={31} stroke={1.2}/><span>A LITTLE LOVE</span></div></div><div className="menu-toolbar"><div className="tabs" aria-label="Menu categories">{categories.map((c) => <button key={c} className={category === c ? "active" : ""} onClick={() => setCategory(c)}>{c}</button>)}</div><label className="search"><IconSearch size={18}/><input placeholder="Find your favourite" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search menu"/></label></div><div className="menu-list-heading"><div><span className="eyebrow">THE GOOD STUFF</span><h3>{category === "All" ? "All favourites" : category}</h3></div><span>{filtered.length} ITEMS TO EXPLORE</span></div><div className="product-grid">{filtered.map((product) => { const quantity = cart.find((line) => line.product.id === product.id)?.quantity ?? 0; return <article className="product-card" key={product.id}><div className="product-image"><img src={product.image} alt={product.name}/>{product.tag && <span className="product-tag">✳ {product.tag}</span>}</div><div className="product-content"><div className="product-title"><h4>{product.name}</h4><span className="veg-icon"><i/></span></div><p>{product.description}</p><div className="product-bottom"><strong>{money(product.price)}</strong>{quantity ? <div className="card-quantity"><button onClick={() => change(product.id, -1)} aria-label={`Remove one ${product.name}`}><IconMinus size={14}/></button><span>{quantity}</span><button onClick={() => add(product)} aria-label={`Add one ${product.name}`}><IconPlus size={14}/></button></div> : <button className="add-button" onClick={() => add(product)}>ADD <IconPlus size={14}/></button>}</div></div></article>; })}</div>{filtered.length === 0 && <p className="no-results">No favourites found. Try another search.</p>}<div className="menu-end"><span>✳</span> A LITTLE MORE TIME TOGETHER <span>✳</span></div></div>{count > 0 && <button className="floating-cart" onClick={() => setOpen(true)}><span>{count} {count === 1 ? "item" : "items"} · {money(cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0))}</span> View order <IconArrowRight size={17}/></button>}</section>;
+}
+type DayPart = "morning" | "afternoon" | "evening";
+const getDayPart = (): DayPart => {
+  const hour = new Date().getHours();
+  return hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 17 ? "afternoon" : "evening";
+};
+const dayPartCopy = {
+  morning: { kicker: "A FRESH START, THE AFTER HOURS WAY", title: "Good mornings.", side: "MAKE TODAY A LITTLE SLOWER", signoff: "Made for bright beginnings.", ticker: "A GOOD START, ONE CUP AT A TIME" },
+  afternoon: { kicker: "TAKE THE LONG WAY THROUGH TODAY", title: "Easy afternoons.", side: "A LITTLE PAUSE IN YOUR DAY", signoff: "A good reason to take a break.", ticker: "TAKE A BREATHER, STAY A LITTLE" },
+  evening: { kicker: "YOUR LITTLE CORNER OF THE EVENING", title: "Good evenings.", side: "GOOD FOOD. GOOD MOOD. GOOD COMPANY.", signoff: "Made for slow evenings.", ticker: "MADE FOR SLOW EVENINGS" },
+};
+function useDayPart(preview: DayPart | "auto") {
+  const [localDayPart, setLocalDayPart] = useState<DayPart>("evening");
+  useEffect(() => {
+    setLocalDayPart(getDayPart());
+    const interval = window.setInterval(() => setLocalDayPart(getDayPart()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+  return preview === "auto" ? localDayPart : preview;
+}
+export function Home() {
+  const table = useTable();
+  const [timePreview, setTimePreview] = useState<DayPart | "auto">("auto");
+  const dayPart = useDayPart(timePreview);
+  const copy = dayPartCopy[dayPart];
+  return <><Header table={table} dark/><main><section className={`hero hero-${dayPart}`}><div className="hero-overlay"/><div className="hero-content"><div className="hero-kicker"><span/> {copy.kicker}</div><h1>{copy.title}<br/><em>Better conversations.</em></h1><p>Chai, coffee and a little more time together.</p><div className="hero-table"><span className="table-dot"/> YOU’RE AT TABLE {tableLabel(table)}</div><a href="#menu" className="button button-gold">Explore the menu <IconArrowRight size={19}/></a><div className="hero-signoff">{copy.signoff} <span>✳</span></div></div><div className="hero-side">{copy.side}</div><div className="hero-bottom"><span>COME AS YOU ARE, STAY AS LONG AS YOU LIKE</span>{import.meta.env.DEV ? <label className="time-preview"><IconClock size={14}/><span>Preview time</span><select aria-label="Preview time of day" value={timePreview} onChange={(event) => setTimePreview(event.target.value as DayPart | "auto")}><option value="auto">Auto</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="evening">Evening</option></select></label> : <span>01 / 03</span>}</div></section><div className="ticker"><span>✳</span> CHAI & CONVERSATIONS <span>✳</span> GOOD FOOD, GOOD COMPANY <span>✳</span> {copy.ticker} <span>✳</span> CHAI & CONVERSATIONS <span>✳</span></div><MenuSection table={table}/></main><Footer/><CartDrawer table={table}/></>;
+}
+export function MenuPage() { const table = useTable(); return <><Header table={table}/><MenuSection table={table} standalone/><Footer/><CartDrawer table={table}/></>; }
+export function Checkout() {
+  const table = useTable(); const navigate = useNavigate(); const { cart, change, clear, setTrackingId } = useContext(Cart);
+  const [name, setName] = useState(""); const [instructions, setInstructions] = useState(""); const [payment, setPayment] = useState<"counter" | "online">("counter");
+  const create = useActionMutation("create-order");
+  const total = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
+  return <><Header table={table}/><main className="flow-page"><Link className="back-link" to={`/menu?table=${table}`}><IconArrowLeft size={16}/> Back to menu</Link><div className="flow-heading"><span className="eyebrow">ALMOST THERE</span><h1>Make yourself <em>at home.</em></h1><p>A few little details and we’ll get started on your order.</p></div><div className="checkout-grid"><div className="checkout-form"><div className="form-card"><div className="form-title"><span>01</span><h2>Your details</h2></div><label>TABLE NUMBER <div className="table-field"><span className="table-dot"/> Table {tableLabel(table)}</div></label><label>YOUR NAME <small>OPTIONAL</small><input value={name} onChange={(e) => setName(e.target.value)} placeholder="What should we call you?"/></label><label>SPECIAL INSTRUCTIONS <small>OPTIONAL</small><textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Anything we should know?" rows={3}/></label></div><div className="form-card"><div className="form-title"><span>02</span><h2>How would you like to pay?</h2></div><button className={`payment-option ${payment === "counter" ? "selected" : ""}`} onClick={() => setPayment("counter")}><span className="radio"/><span><strong>Pay at the counter</strong><small>Settle up whenever you’re ready</small></span></button><button className={`payment-option ${payment === "online" ? "selected" : ""}`} onClick={() => setPayment("online")}><span className="radio"/><span><strong>Pay online</strong><small>DEMO MODE — no payment will be collected</small></span></button></div></div><aside className="summary-card"><span className="eyebrow">THE GOOD STUFF</span><h2>Your order<span className="gold">.</span></h2>{cart.length ? cart.map((line) => <div className="summary-line" key={line.product.id}><div><strong>{line.product.name}</strong><span><button onClick={() => change(line.product.id, -1)}>−</button> {line.quantity} <button onClick={() => change(line.product.id, 1)}>+</button></span></div><strong>{money(line.quantity * line.product.price)}</strong></div>) : <p>Your order is empty. Head back to the menu to add something.</p>}<div className="total-row"><span>Total</span><strong>{money(total)}</strong></div><button className="button button-gold full" disabled={!cart.length || create.isPending} onClick={() => create.mutate({ tableNumber: table, customerName: name, instructions, paymentMethod: payment, items: cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })) }, { onSuccess: (order) => { if (order?.id) { setTrackingId(order.id); clear(); navigate(`/order/${order.id}?table=${table}`); } } })}>{create.isPending ? "Placing your order..." : "Place my order"} <IconArrowRight size={18}/></button>{create.isError && <p className="error">Couldn’t place your order. Please try again.</p>}<p className="summary-foot">Made fresh, just for you. ♡</p></aside></div></main><Footer/><CartDrawer table={table}/></>;
+}
+export function Confirmation() { const table = useTable(); const { id } = useParams(); const { setTrackingId } = useContext(Cart); const order = useOrder(id ?? ""); const status = order?.status ?? "Received"; const step = status === "Ready" ? 2 : status === "Preparing" || status === "Accepted" ? 1 : 0; useEffect(() => { if (id) setTrackingId(id); }, [id]); return <><Header table={order?.tableNumber ?? table} editable={false}/><main className="confirmation"><div className="cup-illustration"><span className="chai-steam">♨</span><IconCoffee size={72} stroke={1}/><i aria-hidden="true">✳</i><i aria-hidden="true">·</i></div><span className="eyebrow">A LITTLE THANK-YOU FROM US</span><h1>The counter was far.<br/><em>Your order wasn't.</em></h1><p>No queue, no long walk, just a few taps from your cozy little corner.<br/><br/>Your order is on its way. Enjoy your time here!</p>{order ? <div className="confirmation-card"><div className="confirm-meta"><div><span>ORDER NUMBER</span><strong>{orderNumber(order.id)}</strong></div><div><span>YOUR TABLE</span><strong>Table {tableLabel(order.tableNumber)}</strong></div></div><div className="progress-steps">{["Order received", "Preparing", "Ready"].map((label, i) => <div key={label} className={i <= step ? "done" : ""}><span>{i < step ? <IconCheck size={16}/> : i + 1}</span><small>{label}</small></div>)}</div>{status === "Ready" && <div className="ready-callout"><IconCheck size={18}/> Your order is ready. Please collect it at the counter.</div>}<div className="confirm-facts"><div><span>PAYMENT</span><strong>{order.paymentStatus}</strong></div><div><span>ESTIMATED PREPARATION</span><strong>{order.status === "Ready" ? "Ready to collect now" : order.estimatedMinutes ? `About ${order.estimatedMinutes} minutes` : "The team is preparing your order"}</strong></div></div><div className="confirm-items">{order.items.map((item) => <div key={item.id}><span>{item.quantity} × {item.name}</span><strong>{money(item.price * item.quantity)}</strong></div>)}<div><strong>Order total</strong><strong>{money(order.total)}</strong></div></div></div> : <div className="confirmation-card">Looking up your order…</div>}<Link className="text-link" to={`/menu?table=${table}`}>A little something else? Back to the menu <IconArrowRight size={16}/></Link></main><Footer/><CartDrawer table={table}/></>; }
+function StaffLogin({ configured, error }: { configured: boolean; error: boolean }) {
+  return <main className="staff-login-page"><div className="staff-login-card"><Brand/><span className="eyebrow">STAFF ACCESS</span><h1>Good to see you<span className="gold">.</span></h1>{configured ? <><p>Enter the café staff password to manage orders.</p>{error && <div className="staff-login-error" role="alert">That password didn’t work. Please try again.</div>}<Form method="post" reloadDocument className="staff-login-form"><input type="hidden" name="intent" value="login"/><label htmlFor="staff-password">STAFF PASSWORD</label><input id="staff-password" name="password" type="password" autoComplete="current-password" required/><button className="button button-gold full" type="submit">Continue to orders <IconArrowRight size={17}/></button></Form></> : <div className="staff-setup-note">Staff access isn’t configured yet. An app administrator needs to set the <code>STAFF_PASSWORD</code> environment variable to a private password at least 16 characters long.</div>}<Link className="text-link" to="/">Back to the café</Link></div></main>;
+}
+export function Staff() {
+  const dayPart = useDayPart("auto");
+  const [searchParams] = useSearchParams();
+  const access = useActionQuery("check-staff-access", {}, { retry: false });
+  const orders = useStaffOrders(access.data?.authorized === true);
+  const update = useActionMutation("update-order");
+  const [filter, setFilter] = useState("Active");
+  const [estimateDrafts, setEstimateDrafts] = useState<Record<string, string>>({});
+  const shown = orders.filter((o) => filter === "All orders" || (filter === "Active" ? o.status !== "Ready" : o.status === "Ready"));
+  if (!access.data) return <main className="staff-login-page"><div className="staff-login-card">Checking staff access…</div></main>;
+  if (!access.data.authorized) return <StaffLogin configured={access.data.configured} error={searchParams.get("error") === "1"}/>;
+  return <div className="staff-page"><header className="staff-header"><Brand light/><div><span className="staff-label">STAFF DASHBOARD</span><Form method="post" reloadDocument><input type="hidden" name="intent" value="logout"/><button className="staff-logout" type="submit">Sign out</button></Form><Link to="/">View customer site <IconArrowRight size={15}/></Link></div></header><main className="staff-main"><div className="staff-top"><div><span className="eyebrow">THE HEART OF AFTER HOURS</span><h1>{dayPart === "morning" ? "Morning" : dayPart === "afternoon" ? "Afternoon" : "Evening"}, team<span className="gold">.</span></h1><p>Here’s what’s happening at the café.</p></div><div className="staff-live"><span className="table-dot"/> LIVE ORDERS</div></div><div className="staff-toolbar"><div className="staff-tabs">{["Active", "Ready", "All orders"].map((s) => <button className={filter === s ? "active" : ""} key={s} onClick={() => setFilter(s)}>{s}</button>)}</div><span>{shown.length} {shown.length === 1 ? "ORDER" : "ORDERS"}</span></div>{shown.length === 0 ? <div className="staff-empty"><IconCoffee size={42} stroke={1}/><h2>All caught up.</h2><p>New orders will appear here when they come in.</p></div> : <div className="order-grid">{shown.map((order) => <article className="order-card" key={order.id}><div className="order-card-top"><div><span className="eyebrow">{orderNumber(order.id)}</span><h2>Table {tableLabel(order.tableNumber)}</h2></div><span className={`status status-${order.status.toLowerCase()}`}>{order.status === "Ready" ? "Ready for collection" : order.status}</span></div><div className="order-time"><IconClock size={15}/> {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} {order.customerName && `· ${order.customerName}`}</div><div className="staff-items">{order.items.map((item) => <div key={item.id}><span><b>{item.quantity}×</b> {item.name}</span><span>{money(item.quantity * item.price)}</span></div>)}</div>{order.instructions && <div className="instructions"><strong>NOTE</strong> {order.instructions}</div>}<div className="staff-payment"><span>{order.paymentMethod === "counter" ? "Pay at counter" : "Online · DEMO MODE"}</span><strong>{order.paymentStatus}</strong></div><div className="staff-estimate"><label htmlFor={`estimate-${order.id}`}>PREP ESTIMATE <span>MINUTES</span></label><div><input id={`estimate-${order.id}`} type="number" min="1" max="240" step="1" placeholder="e.g. 15" value={estimateDrafts[order.id] ?? order.estimatedMinutes?.toString() ?? ""} onChange={(event) => setEstimateDrafts((current) => ({ ...current, [order.id]: event.target.value }))}/><button type="button" disabled={update.isPending || !/^[0-9]+$/.test(estimateDrafts[order.id] ?? order.estimatedMinutes?.toString() ?? "") || Number(estimateDrafts[order.id] ?? order.estimatedMinutes) < 1 || Number(estimateDrafts[order.id] ?? order.estimatedMinutes) > 240} onClick={() => update.mutate({ id: order.id, estimatedMinutes: Number(estimateDrafts[order.id] ?? order.estimatedMinutes) })}>Save estimate</button></div></div>{order.status !== "Ready" && <button className="button button-gold full" disabled={update.isPending} onClick={() => update.mutate({ id: order.id, status: order.status === "Received" ? "Accepted" : order.status === "Accepted" ? "Preparing" : "Ready" })}>{order.status === "Received" ? "Accept order" : order.status === "Accepted" ? "Start preparing" : "Mark ready"} <IconArrowRight size={17}/></button>}</article>)}</div>}</main></div>; }
