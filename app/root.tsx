@@ -4,9 +4,10 @@ import { useDbSync } from "@agent-native/core/client/hooks";
 import { createAgentNativeQueryClient } from "@agent-native/core/client/hooks";
 import { getThemeInitScript } from "@agent-native/core/client/ui";
 import { AppProviders } from "@agent-native/toolkit/app/providers";
+import { ClientOnly } from "@agent-native/toolkit/app/shared/ClientOnly";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+import { Links, Meta, Outlet, Scripts, ScrollRestoration, useLocation } from "react-router";
 import type { LinksFunction } from "react-router";
 
 import { Layout as AppLayout } from "@/components/layout/Layout";
@@ -30,6 +31,15 @@ export const links: LinksFunction = () => [
 ];
 
 const THEME_INIT_SCRIPT = getThemeInitScript();
+const PUBLIC_PATHS = ["/", "/menu", "/checkout", "/order", "/staff"];
+
+function isPublicCafePath(pathname: string) {
+  return PUBLIC_PATHS.some((path) =>
+    path === "/"
+      ? pathname === path
+      : pathname === path || pathname.startsWith(`${path}/`),
+  );
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -81,10 +91,13 @@ function DbSyncSetup() {
 
 export default function Root() {
   const [queryClient] = useState(() => createAgentNativeQueryClient());
+  const { pathname } = useLocation();
   return (
     <AppToolkitProvider>
-      <AppProviders queryClient={queryClient}>
-        <DbSyncSetup />
+      <AppProviders queryClient={queryClient} isPublicPath={isPublicCafePath(pathname)}>
+        <ClientOnly>
+          <DbSyncSetup />
+        </ClientOnly>
         <CafeProvider>
           <AppLayout>
             <Outlet />

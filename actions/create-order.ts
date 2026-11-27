@@ -6,12 +6,17 @@ import { getDb, schema } from "../server/db";
 export default defineAction({
   description: "Place a café table order.",
   schema: z.object({
-    tableNumber: z.number().int().positive(),
-    customerName: z.string().default(""),
-    instructions: z.string().default(""),
+    tableNumber: z.number().int().positive().max(999),
+    customerName: z.string().max(100).default(""),
+    instructions: z.string().max(500).default(""),
     paymentMethod: z.enum(["counter", "online"]),
-    items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1),
+    items: z.array(z.object({
+      productId: z.string().min(1).max(128),
+      quantity: z.number().int().positive().max(99),
+    })).min(1).max(30),
   }),
+  requiresAuth: false,
+  maxBodyBytes: 16_384,
   run: async ({ tableNumber, customerName, instructions, paymentMethod, items }) => {
     const db = getDb();
     const products = await db.select().from(schema.products).where(inArray(schema.products.id, items.map((item) => item.productId)));

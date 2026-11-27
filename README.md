@@ -10,9 +10,12 @@ Staff can view incoming orders and update their preparation status.
 - Build a table-specific cart and place an order with customer instructions.
 - Track order status and preparation estimates.
 - Password-protected staff dashboard for managing orders.
+- On-demand daily staff reports with item totals, Excel-compatible CSV, and print-to-PDF export (business day: Asia/Kolkata).
 - Responsive customer and staff pages.
 
-Orders currently use demo payment mode; the app does not process payments.
+Customers can order without Google or email sign-in. Orders currently use demo
+payment mode; the app does not process payments, and report totals are not
+confirmation of money collected.
 The initial database migration seeds eight sample menu products.
 
 ## Tech stack

@@ -40,3 +40,19 @@ Use `adding-a-feature` for functional parity and `frontend-design` for a user-fa
 Before building common workspace or agent UI, read `agent-native-toolkit`; for supported customization, read `customizing-agent-native`.
 
 - Guarded verification: run `pnpm agent-native:doctor`; fix findings before done.
+
+## Café workflows
+
+| Action | Use |
+| --- | --- |
+| `list-products` | Read the public café menu; no customer account is needed. |
+| `create-order` | Place a customer order; the action validates menu item ids and quantities. |
+| `get-order` | Read an order by its tracking id for the customer confirmation page. |
+| `list-orders` | Staff dashboard only; requires a valid staff-password session cookie. |
+| `update-order` | Change an order status or preparation estimate; requires a valid staff-password session cookie. |
+| `get-daily-report` | Staff dashboard only; requires a valid staff-password session cookie and a `YYYY-MM-DD` date in `Asia/Kolkata`. Returns item totals, order details, and unpaid/due summaries for CSV or print-to-PDF export. |
+
+Customer pages and menu/order actions are intentionally public so guests can
+order without Google or email sign-in. Staff order data and mutations must
+always keep the `requireStaff` check; do not remove it when changing action
+authentication settings.

@@ -1,4 +1,4 @@
-import { Staff } from "@/components/cafe";
+import { Staff, StaffDailyReport } from "@/components/cafe";
 import { createStaffCookie, clearStaffCookie, isStaffConfigured, isValidStaffPassword } from "../../server/staff-auth";
 import type { ActionFunctionArgs } from "react-router";
 
@@ -19,4 +19,11 @@ export async function action({ request }: ActionFunctionArgs) {
   return new Response(null, { status: 303, headers: { Location: "/staff", "Set-Cookie": cookie } });
 }
 
-export default Staff;
+export default function StaffRoute() {
+  return (
+    <>
+      <Staff />
+      <StaffDailyReport />
+    </>
+  );
+}

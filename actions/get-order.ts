@@ -7,6 +7,7 @@ export default defineAction({
   description: "Get one café order and its items by order id for customer tracking.",
   schema: z.object({ id: z.string().describe("Order id from the tracking link") }),
   http: { method: "GET" },
+  requiresAuth: false,
   persistInBrowser: false,
   run: async ({ id }) => {
     const db = getDb();

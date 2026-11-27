@@ -10,16 +10,20 @@ export interface NavigationState {
   view?: string;
   path?: string;
   publicPath?: string;
+  reportDate?: string;
 }
 
 export function useNavigationState() {
   useAgentRouteState<NavigationState>({
     browserTabId: TAB_ID,
     requestSource: TAB_ID,
-    getNavigationState: ({ pathname }) => ({
+    getNavigationState: ({ pathname, searchParams }) => ({
       view: viewForPath(pathname),
       path: pathname,
       publicPath: appPathFromLocalRoute(pathname),
+      ...(pathname === "/staff" && searchParams.get("date")
+        ? { reportDate: searchParams.get("date")! }
+        : {}),
     }),
     getCommandPath: commandPathForNavigation,
   });
@@ -60,6 +64,10 @@ function matchesPathPrefix(pathname: string, prefix: string): boolean {
 
 function viewForPath(pathname: string): string {
   if (pathname === "/") return "home";
+  if (pathname === "/menu") return "menu";
+  if (pathname === "/checkout") return "checkout";
+  if (pathname === "/staff") return "staff";
+  if (pathname.startsWith("/order/")) return "order";
   return "home";
 }
 
@@ -67,6 +75,12 @@ function pathForView(view?: string): string {
   switch (view) {
     case "home":
       return "/";
+    case "menu":
+      return "/menu";
+    case "checkout":
+      return "/checkout";
+    case "staff":
+      return "/staff";
     default:
       return "/";
   }

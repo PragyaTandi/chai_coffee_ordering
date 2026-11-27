@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
+import { actionErrorMessage, useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import { IconArrowLeft, IconArrowRight, IconCheck, IconChevronDown, IconClock, IconCoffee, IconMinus, IconPlus, IconSearch, IconShoppingBag, IconX } from "@tabler/icons-react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Form, Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -6,6 +6,29 @@ import { Form, Link, useNavigate, useParams, useSearchParams } from "react-route
 type Product = { id: string; name: string; description: string; category: string; price: number; image: string; tag: string };
 type Line = { product: Product; quantity: number };
 type Order = { id: string; tableNumber: number; customerName: string; instructions: string; paymentMethod: string; paymentStatus: string; status: string; total: number; estimatedMinutes: number | null; createdAt: string; items: { id: string; name: string; price: number; quantity: number }[] };
+type DailyReportItem = { id: string; name: string; price: number; quantity: number; lineTotal: number };
+type DailyReportOrder = {
+  id: string;
+  tableNumber: number;
+  customerName: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  status: string;
+  total: number;
+  createdAt: string;
+  items: DailyReportItem[];
+};
+type DailyReport = {
+  date: string;
+  timezone: string;
+  orderCount: number;
+  totalItems: number;
+  totalOrderValue: number;
+  counterDueValue: number;
+  onlineUnpaidValue: number;
+  itemTotals: { name: string; unitPrice: number; quantity: number; lineTotal: number }[];
+  orders: DailyReportOrder[];
+};
 type CartContext = { cart: Line[]; add: (p: Product) => void; change: (id: string, amount: number) => void; clear: () => void; open: boolean; setOpen: (open: boolean) => void; trackingId: string | null; setTrackingId: (id: string) => void };
 const Cart = createContext<CartContext>(null!);
 const categories = ["All", "Chai & Tea", "Coffee", "Cold Drinks", "Snacks", "Desserts"];
@@ -34,7 +57,81 @@ function useTable() {
 }
 function useProducts() { return useActionQuery<Product[]>("list-products", {}).data ?? []; }
 function useStaffOrders(enabled: boolean) { return useActionQuery<Order[]>("list-orders", {}, { enabled, refetchInterval: 5000 }).data ?? []; }
+function useStaffAccess() { return useActionQuery("check-staff-access", {}, { retry: false, refetchInterval: 5000 }); }
 function useOrder(id: string) { return useActionQuery<Order | null>("get-order", { id }, { enabled: Boolean(id), refetchInterval: 5000 }).data ?? null; }
+const REPORT_TIME_ZONE = "Asia/Kolkata";
+function getCafeDate() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    timeZone: REPORT_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: string) => parts.find((value) => value.type === type)?.value;
+  const year = part("year");
+  const month = part("month");
+  const day = part("day");
+  if (!year || !month || !day) throw new Error("Could not determine the café's local date.");
+  return `${year}-${month}-${day}`;
+}
+function isValidReportDate(value: string | null): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+function formatReportTime(value: string, timeZone = REPORT_TIME_ZONE) {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+function csvCell(value: string | number) {
+  const text = String(value);
+  const safeText = /^[\t\r ]*[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replace(/"/g, '""')}"`;
+}
+function downloadDailyReportCsv(report: DailyReport) {
+  const rows: (string | number)[][] = [
+    ["After Hours daily order report", report.date],
+    ["Timezone", report.timezone],
+    [],
+    ["Orders", report.orderCount],
+    ["Items sold", report.totalItems],
+    ["Order value (INR)", report.totalOrderValue],
+    ["Pay-at-counter due (INR)", report.counterDueValue],
+    ["Online unpaid (INR)", report.onlineUnpaidValue],
+    [],
+    ["Order ID", "Time", "Table", "Customer", "Order status", "Payment method", "Payment status", "Item", "Quantity", "Unit price (INR)", "Line total (INR)", "Order total (INR)"],
+    ...report.orders.flatMap((order) => {
+      const orderItems = order.items.length ? order.items : [null];
+      return orderItems.map((item, index) => [
+        order.id,
+        formatReportTime(order.createdAt, report.timezone),
+        order.tableNumber,
+        order.customerName,
+        order.status,
+        order.paymentMethod,
+        order.paymentStatus,
+        item?.name ?? "",
+        item?.quantity ?? "",
+        item?.price ?? "",
+        item?.lineTotal ?? "",
+        index === 0 ? order.total : "",
+      ]);
+    }),
+  ];
+  const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `after-hours-orders-${report.date}.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function TablePicker({ table, editable }: { table: number; editable: boolean }) {
   const [, setSearchParams] = useSearchParams();
@@ -127,12 +224,117 @@ function StaffLogin({ configured, error }: { configured: boolean; error: boolean
 export function Staff() {
   const dayPart = useDayPart("auto");
   const [searchParams] = useSearchParams();
-  const access = useActionQuery("check-staff-access", {}, { retry: false });
+  const access = useStaffAccess();
   const orders = useStaffOrders(access.data?.authorized === true);
   const update = useActionMutation("update-order");
   const [filter, setFilter] = useState("Active");
   const [estimateDrafts, setEstimateDrafts] = useState<Record<string, string>>({});
   const shown = orders.filter((o) => filter === "All orders" || (filter === "Active" ? o.status !== "Ready" : o.status === "Ready"));
+  if (access.isError) return <main className="staff-login-page"><div className="staff-login-card" role="alert">Couldn’t verify staff access. Refresh to try again.</div></main>;
   if (!access.data) return <main className="staff-login-page"><div className="staff-login-card">Checking staff access…</div></main>;
   if (!access.data.authorized) return <StaffLogin configured={access.data.configured} error={searchParams.get("error") === "1"}/>;
   return <div className="staff-page"><header className="staff-header"><Brand light/><div><span className="staff-label">STAFF DASHBOARD</span><Form method="post" reloadDocument><input type="hidden" name="intent" value="logout"/><button className="staff-logout" type="submit">Sign out</button></Form><Link to="/">View customer site <IconArrowRight size={15}/></Link></div></header><main className="staff-main"><div className="staff-top"><div><span className="eyebrow">THE HEART OF AFTER HOURS</span><h1>{dayPart === "morning" ? "Morning" : dayPart === "afternoon" ? "Afternoon" : "Evening"}, team<span className="gold">.</span></h1><p>Here’s what’s happening at the café.</p></div><div className="staff-live"><span className="table-dot"/> LIVE ORDERS</div></div><div className="staff-toolbar"><div className="staff-tabs">{["Active", "Ready", "All orders"].map((s) => <button className={filter === s ? "active" : ""} key={s} onClick={() => setFilter(s)}>{s}</button>)}</div><span>{shown.length} {shown.length === 1 ? "ORDER" : "ORDERS"}</span></div>{shown.length === 0 ? <div className="staff-empty"><IconCoffee size={42} stroke={1}/><h2>All caught up.</h2><p>New orders will appear here when they come in.</p></div> : <div className="order-grid">{shown.map((order) => <article className="order-card" key={order.id}><div className="order-card-top"><div><span className="eyebrow">{orderNumber(order.id)}</span><h2>Table {tableLabel(order.tableNumber)}</h2></div><span className={`status status-${order.status.toLowerCase()}`}>{order.status === "Ready" ? "Ready for collection" : order.status}</span></div><div className="order-time"><IconClock size={15}/> {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} {order.customerName && `· ${order.customerName}`}</div><div className="staff-items">{order.items.map((item) => <div key={item.id}><span><b>{item.quantity}×</b> {item.name}</span><span>{money(item.quantity * item.price)}</span></div>)}</div>{order.instructions && <div className="instructions"><strong>NOTE</strong> {order.instructions}</div>}<div className="staff-payment"><span>{order.paymentMethod === "counter" ? "Pay at counter" : "Online · DEMO MODE"}</span><strong>{order.paymentStatus}</strong></div><div className="staff-estimate"><label htmlFor={`estimate-${order.id}`}>PREP ESTIMATE <span>MINUTES</span></label><div><input id={`estimate-${order.id}`} type="number" min="1" max="240" step="1" placeholder="e.g. 15" value={estimateDrafts[order.id] ?? order.estimatedMinutes?.toString() ?? ""} onChange={(event) => setEstimateDrafts((current) => ({ ...current, [order.id]: event.target.value }))}/><button type="button" disabled={update.isPending || !/^[0-9]+$/.test(estimateDrafts[order.id] ?? order.estimatedMinutes?.toString() ?? "") || Number(estimateDrafts[order.id] ?? order.estimatedMinutes) < 1 || Number(estimateDrafts[order.id] ?? order.estimatedMinutes) > 240} onClick={() => update.mutate({ id: order.id, estimatedMinutes: Number(estimateDrafts[order.id] ?? order.estimatedMinutes) })}>Save estimate</button></div></div>{order.status !== "Ready" && <button className="button button-gold full" disabled={update.isPending} onClick={() => update.mutate({ id: order.id, status: order.status === "Received" ? "Accepted" : order.status === "Accepted" ? "Preparing" : "Ready" })}>{order.status === "Received" ? "Accept order" : order.status === "Accepted" ? "Start preparing" : "Mark ready"} <IconArrowRight size={17}/></button>}</article>)}</div>}</main></div>; }
+
+export function StaffDailyReport() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [today] = useState(getCafeDate);
+  const date = isValidReportDate(searchParams.get("date")) ? searchParams.get("date")! : today;
+  const access = useStaffAccess();
+  const report = useActionQuery(
+    "get-daily-report",
+    { date },
+    { enabled: access.data?.authorized === true, retry: false },
+  );
+  if (access.isError || !access.data?.authorized) return null;
+
+  return (
+    <section className="daily-report" data-daily-report-print aria-labelledby="daily-report-title">
+      <header className="daily-report-heading">
+        <div>
+          <span className="eyebrow">DAILY REPORT · ASIA/KOLKATA</span>
+          <h2 id="daily-report-title">Orders by day<span className="gold">.</span></h2>
+        </div>
+        <div className="daily-report-controls" data-print-hide>
+          <label htmlFor="daily-report-date">REPORT DATE</label>
+          <input
+            id="daily-report-date"
+            type="date"
+            value={date}
+            max={today}
+            onChange={(event) => {
+              const next = new URLSearchParams(searchParams);
+              if (event.target.value === today) next.delete("date");
+              else next.set("date", event.target.value);
+              setSearchParams(next, { replace: true });
+            }}
+          />
+          <button type="button" disabled={!report.data} onClick={() => report.data && downloadDailyReportCsv(report.data)}>
+            Download Excel CSV
+          </button>
+          <button type="button" disabled={!report.data} onClick={() => window.print()}>
+            Print / Save PDF
+          </button>
+        </div>
+      </header>
+      {report.isLoading ? (
+        <p className="daily-report-message">Loading this day’s orders…</p>
+      ) : report.isError ? (
+        <p className="daily-report-message daily-report-error" role="alert">
+          {actionErrorMessage(report.error) ?? "Couldn’t load the daily report. Please try again."}
+        </p>
+      ) : report.data ? (
+        <>
+          <div className="daily-report-stats">
+            <div><span>ORDERS</span><strong>{report.data.orderCount}</strong></div>
+            <div><span>ITEMS SOLD</span><strong>{report.data.totalItems}</strong></div>
+            <div><span>ORDER VALUE</span><strong>{money(report.data.totalOrderValue)}</strong></div>
+            <div><span>DUE AT COUNTER</span><strong>{money(report.data.counterDueValue)}</strong></div>
+            <div><span>ONLINE · UNPAID</span><strong>{money(report.data.onlineUnpaidValue)}</strong></div>
+          </div>
+          <p className="daily-report-note">
+            Order value is not a record of money collected. Online payments are demo-only and are not processed.
+          </p>
+          <div className="daily-report-section">
+            <h3>Items sold</h3>
+            {report.data.itemTotals.length ? (
+              <div className="daily-report-table-wrap">
+                <table className="daily-report-table">
+                  <thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Item total</th></tr></thead>
+                  <tbody>{report.data.itemTotals.map((item) => (
+                    <tr key={`${item.name}-${item.unitPrice}`}>
+                      <td>{item.name}</td><td>{item.quantity}</td><td>{money(item.unitPrice)}</td><td>{money(item.lineTotal)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : <p className="daily-report-message">No orders were placed on this date.</p>}
+          </div>
+          <div className="daily-report-section">
+            <h3>Order details</h3>
+            {report.data.orders.length ? report.data.orders.map((order) => (
+              <article className="daily-report-order" key={order.id}>
+                <div className="daily-report-order-heading">
+                  <div><strong>{orderNumber(order.id)}</strong><span>Table {tableLabel(order.tableNumber)} · {formatReportTime(order.createdAt, report.data!.timezone)}</span></div>
+                  <strong>{money(order.total)}</strong>
+                </div>
+                {order.customerName && <p className="daily-report-customer">{order.customerName}</p>}
+                <div className="daily-report-lines">
+                  {order.items.map((item) => (
+                    <div key={item.id}>
+                      <span>{item.quantity} × {item.name} <small>({money(item.price)} each)</small></span>
+                      <strong>{money(item.lineTotal)}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="daily-report-payment">
+                  <span>{order.status} · {order.paymentMethod === "counter" ? "Pay at counter" : "Online"}</span>
+                  <strong>{order.paymentStatus}</strong>
+                </div>
+              </article>
+            )) : <p className="daily-report-message">No orders were placed on this date.</p>}
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}

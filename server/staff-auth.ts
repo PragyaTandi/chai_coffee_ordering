@@ -1,10 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { fail, type ActionRunContext } from "@agent-native/core/action";
+import { defineActionErrors, type ActionRunContext } from "@agent-native/core/action";
 import { readDeployCredentialEnv } from "@agent-native/core/server";
 
 const COOKIE_NAME = "after_hours_staff";
 const STAFF_PASSWORD_KEY = "STAFF_PASSWORD";
 const SESSION_LIFETIME_SECONDS = 8 * 60 * 60;
+export const staffActionErrors = defineActionErrors("staff_access_required");
 
 function safeEqual(left: string, right: string) {
   const a = Buffer.from(left);
@@ -56,6 +57,8 @@ export async function hasStaffSession(headers?: Headers) {
 
 export async function requireStaff(context?: ActionRunContext) {
   if (!(await hasStaffSession(context?.requestHeaders))) {
-    fail("Staff access required.", { errorCode: "staff_access_required", statusCode: 403 });
+    staffActionErrors.noWrite("Staff access required.", "staff_access_required", {
+      statusCode: 403,
+    });
   }
 }

@@ -1,5 +1,5 @@
 import { defineAction, fail } from "@agent-native/core/action";
-import { requireStaff } from "../server/staff-auth";
+import { requireStaff, staffActionErrors } from "../server/staff-auth";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "../server/db";
@@ -11,9 +11,11 @@ export default defineAction({
     status: z.enum(["Received", "Accepted", "Preparing", "Ready"]).optional().describe("Next order status; omit when only changing the estimate"),
     estimatedMinutes: z.number().int().min(1).max(240).nullable().optional().describe("Estimated preparation time in minutes; use null to clear it"),
   }),
+  requiresAuth: false,
   agentTool: false,
+  errors: staffActionErrors,
   run: async ({ id, status, estimatedMinutes }, context) => {
-    requireStaff(context);
+    await requireStaff(context);
     if (!status && estimatedMinutes === undefined) fail("Provide an order status or preparation estimate.");
     const patch: { status?: string; estimatedMinutes?: number | null } = {};
     if (status) patch.status = status;
