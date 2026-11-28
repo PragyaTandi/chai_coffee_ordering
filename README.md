@@ -9,7 +9,9 @@ Staff can view incoming orders and update their preparation status.
 - Search and filter chai, coffee, cold drinks, snacks, and desserts.
 - Build a table-specific cart and place an order with customer instructions.
 - Track order status and preparation estimates.
-- Password-protected staff dashboard for managing orders.
+- Password-protected staff dashboard for managing orders, requiring the staff
+  password each time it is opened and chiming when new orders arrive (muted
+  with the dashboard control if needed).
 - On-demand daily staff reports with item totals, Excel-compatible CSV, and print-to-PDF export (business day: Asia/Kolkata).
 - Responsive customer and staff pages.
 

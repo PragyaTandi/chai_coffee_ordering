@@ -55,4 +55,5 @@ Before building common workspace or agent UI, read `agent-native-toolkit`; for s
 Customer pages and menu/order actions are intentionally public so guests can
 order without Google or email sign-in. Staff order data and mutations must
 always keep the `requireStaff` check; do not remove it when changing action
-authentication settings.
+authentication settings. Staff must enter the password each time the dashboard
+is opened; a one-time entry grant is consumed by `/api/staff-visit`.

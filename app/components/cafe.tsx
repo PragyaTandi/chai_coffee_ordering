@@ -57,9 +57,31 @@ function useTable() {
   return Number.isInteger(number) && number > 0 ? number : 7;
 }
 function useProducts() { return useActionQuery<Product[]>("list-products", {}).data ?? []; }
-function useStaffOrders(enabled: boolean) { return useActionQuery<Order[]>("list-orders", {}, { enabled, refetchInterval: 5000 }).data ?? []; }
+function useStaffOrders(enabled: boolean) { return useActionQuery<Order[]>("list-orders", {}, { enabled, refetchInterval: 5000 }); }
 function useStaffAccess() { return useActionQuery("check-staff-access", {}, { retry: false, refetchInterval: 5000 }); }
 function useOrder(id: string) { return useActionQuery<Order | null>("get-order", { id }, { enabled: Boolean(id), refetchInterval: 5000 }).data ?? null; }
+function playOrderClink(context: AudioContext, delay = 0) {
+  const startAt = context.currentTime + delay;
+  [1396.91, 1760].forEach((frequency, index) => {
+    const toneStart = startAt + index * 0.055;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(frequency, toneStart);
+    oscillator.frequency.exponentialRampToValueAtTime(frequency * 0.75, toneStart + 0.4);
+    gain.gain.setValueAtTime(0.0001, toneStart);
+    gain.gain.exponentialRampToValueAtTime(0.12, toneStart + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, toneStart + 0.45);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.addEventListener("ended", () => {
+      oscillator.disconnect();
+      gain.disconnect();
+    }, { once: true });
+    oscillator.start(toneStart);
+    oscillator.stop(toneStart + 0.45);
+  });
+}
 const REPORT_TIME_ZONE = "Asia/Kolkata";
 function getCafeDate() {
   const now = new Date();
@@ -476,21 +498,188 @@ export function Confirmation() {
 function StaffLogin({ configured, error }: { configured: boolean; error: boolean }) {
   return <main className="staff-login-page"><div className="staff-login-card"><Brand/><span className="eyebrow">STAFF ACCESS</span><h1>Good to see you<span className="gold">.</span></h1>{configured ? <><p>Enter the café staff password to manage orders.</p>{error && <div className="staff-login-error" role="alert">That password didn’t work. Please try again.</div>}<Form method="post" reloadDocument className="staff-login-form"><input type="hidden" name="intent" value="login"/><label htmlFor="staff-password">STAFF PASSWORD</label><input id="staff-password" name="password" type="password" autoComplete="current-password" required/><button className="button button-gold full" type="submit">Continue to orders <IconArrowRight size={17}/></button></Form></> : <div className="staff-setup-note">Staff access isn’t configured yet. An app administrator needs to set the <code>STAFF_PASSWORD</code> environment variable to a private password at least 16 characters long.</div>}<Link className="text-link" to="/">Back to the café</Link></div></main>;
 }
-export function Staff() {
+export function Staff({ entryAuthorized }: { entryAuthorized: boolean }) {
   const dayPart = useDayPart("auto");
   const [searchParams] = useSearchParams();
   const access = useStaffAccess();
-  const orders = useStaffOrders(access.data?.authorized === true);
+  const orderQuery = useStaffOrders(entryAuthorized && access.data?.authorized === true);
+  const orders = orderQuery.data ?? [];
   const update = useActionMutation("update-order");
   const [filter, setFilter] = useState("Active");
   const [estimateDrafts, setEstimateDrafts] = useState<Record<string, string>>({});
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  const audioContext = useRef<AudioContext | null>(null);
+  const seenOrderIds = useRef<Set<string> | null>(null);
   const shown = orders.filter((o) => filter === "All orders" || (filter === "Active" ? o.status !== "Ready" : o.status === "Ready"));
+
+  useEffect(() => {
+    if (!entryAuthorized || !orderQuery.data) {
+      seenOrderIds.current = null;
+      return;
+    }
+
+    const newOrders = orderQuery.data.filter((order) => !seenOrderIds.current?.has(order.id));
+    const isInitialLoad = seenOrderIds.current === null;
+    seenOrderIds.current = new Set(orderQuery.data.map((order) => order.id));
+    if (isInitialLoad || newOrders.length === 0 || !soundEnabled) return;
+
+    try {
+      const context = audioContext.current ?? new window.AudioContext();
+      audioContext.current = context;
+      void context.resume().then(() => {
+        newOrders.forEach((_, index) => playOrderClink(context, index * 0.25));
+        setSoundBlocked(false);
+      }).catch(() => setSoundBlocked(true));
+    } catch {
+      setSoundBlocked(true);
+    }
+  }, [entryAuthorized, orderQuery.data, soundEnabled]);
+
+  function enableOrderSound() {
+    setSoundEnabled(true);
+    try {
+      const context = audioContext.current ?? new window.AudioContext();
+      audioContext.current = context;
+      void context.resume().then(() => {
+        playOrderClink(context);
+        setSoundBlocked(false);
+      }).catch(() => setSoundBlocked(true));
+    } catch {
+      setSoundBlocked(true);
+    }
+  }
+
+  if (!entryAuthorized) {
+    if (access.isError) return <main className="staff-login-page"><div className="staff-login-card" role="alert">Couldn’t verify staff access. Refresh to try again.</div></main>;
+    if (!access.data) return <main className="staff-login-page"><div className="staff-login-card">Checking staff access…</div></main>;
+    return <StaffLogin configured={access.data.configured} error={searchParams.get("error") === "1"}/>;
+  }
   if (access.isError) return <main className="staff-login-page"><div className="staff-login-card" role="alert">Couldn’t verify staff access. Refresh to try again.</div></main>;
   if (!access.data) return <main className="staff-login-page"><div className="staff-login-card">Checking staff access…</div></main>;
   if (!access.data.authorized) return <StaffLogin configured={access.data.configured} error={searchParams.get("error") === "1"}/>;
-  return <div className="staff-page"><header className="staff-header"><Brand light/><div><span className="staff-label">STAFF DASHBOARD</span><Form method="post" reloadDocument><input type="hidden" name="intent" value="logout"/><button className="staff-logout" type="submit">Sign out</button></Form><Link to="/">View customer site <IconArrowRight size={15}/></Link></div></header><main className="staff-main"><div className="staff-top"><div><span className="eyebrow">THE HEART OF AFTER HOURS</span><h1>{dayPart === "morning" ? "Morning" : dayPart === "afternoon" ? "Afternoon" : "Evening"}, team<span className="gold">.</span></h1><p>Here’s what’s happening at the café.</p></div><div className="staff-live"><span className="table-dot"/> LIVE ORDERS</div></div><div className="staff-toolbar"><div className="staff-tabs">{["Active", "Ready", "All orders"].map((s) => <button className={filter === s ? "active" : ""} key={s} onClick={() => setFilter(s)}>{s}</button>)}</div><span>{shown.length} {shown.length === 1 ? "ORDER" : "ORDERS"}</span></div>{shown.length === 0 ? <div className="staff-empty"><IconCoffee size={42} stroke={1}/><h2>All caught up.</h2><p>New orders will appear here when they come in.</p></div> : <div className="order-grid">{shown.map((order) => <article className="order-card" key={order.id}><div className="order-card-top"><div><span className="eyebrow">{orderNumber(order.id)}</span><h2>Table {tableLabel(order.tableNumber)}</h2></div><span className={`status status-${order.status.toLowerCase()}`}>{order.status === "Ready" ? "Ready for collection" : order.status}</span></div><div className="order-time"><IconClock size={15}/> {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} {order.customerName && `· ${order.customerName}`}</div><div className="staff-items">{order.items.map((item) => <div key={item.id}><span><b>{item.quantity}×</b> {item.name}</span><span>{money(item.quantity * item.price)}</span></div>)}</div>{order.instructions && <div className="instructions"><strong>NOTE</strong> {order.instructions}</div>}<div className="staff-payment"><span>{order.paymentMethod === "counter" ? "Pay at counter" : "Online · DEMO MODE"}</span><strong>{order.paymentStatus}</strong></div><div className="staff-estimate"><label htmlFor={`estimate-${order.id}`}>PREP ESTIMATE <span>MINUTES</span></label><div><input id={`estimate-${order.id}`} type="number" min="1" max="240" step="1" placeholder="e.g. 15" value={estimateDrafts[order.id] ?? order.estimatedMinutes?.toString() ?? ""} onChange={(event) => setEstimateDrafts((current) => ({ ...current, [order.id]: event.target.value }))}/><button type="button" disabled={update.isPending || !/^[0-9]+$/.test(estimateDrafts[order.id] ?? order.estimatedMinutes?.toString() ?? "") || Number(estimateDrafts[order.id] ?? order.estimatedMinutes) < 1 || Number(estimateDrafts[order.id] ?? order.estimatedMinutes) > 240} onClick={() => update.mutate({ id: order.id, estimatedMinutes: Number(estimateDrafts[order.id] ?? order.estimatedMinutes) })}>Save estimate</button></div></div>{order.status !== "Ready" && <button className="button button-gold full" disabled={update.isPending} onClick={() => update.mutate({ id: order.id, status: order.status === "Received" ? "Accepted" : order.status === "Accepted" ? "Preparing" : "Ready" })}>{order.status === "Received" ? "Accept order" : order.status === "Accepted" ? "Start preparing" : "Mark ready"} <IconArrowRight size={17}/></button>}</article>)}</div>}</main></div>; }
+  return (
+    <div className="staff-page">
+      <header className="staff-header">
+        <Brand light />
+        <div>
+          <span className="staff-label">STAFF DASHBOARD</span>
+          <button
+            className="staff-logout"
+            type="button"
+            aria-pressed={soundEnabled}
+            onClick={() => soundEnabled && !soundBlocked ? setSoundEnabled(false) : enableOrderSound()}
+          >
+            {soundBlocked ? "Enable sound" : soundEnabled ? "Mute sound" : "Enable sound"}
+          </button>
+          <Form method="post" reloadDocument>
+            <input type="hidden" name="intent" value="logout" />
+            <button className="staff-logout" type="submit">Sign out</button>
+          </Form>
+          <Link to="/">View customer site <IconArrowRight size={15} /></Link>
+        </div>
+      </header>
+      <main className="staff-main">
+        <div className="staff-top">
+          <div>
+            <span className="eyebrow">THE HEART OF AFTER HOURS</span>
+            <h1>
+              {dayPart === "morning" ? "Morning" : dayPart === "afternoon" ? "Afternoon" : "Evening"}, team
+              <span className="gold">.</span>
+            </h1>
+            <p>Here’s what’s happening at the café.</p>
+          </div>
+          <div className="staff-live"><span className="table-dot" /> LIVE ORDERS</div>
+        </div>
+        <div className="staff-toolbar">
+          <div className="staff-tabs">
+            {["Active", "Ready", "All orders"].map((value) => (
+              <button className={filter === value ? "active" : ""} key={value} onClick={() => setFilter(value)}>
+                {value}
+              </button>
+            ))}
+          </div>
+          <span>{shown.length} {shown.length === 1 ? "ORDER" : "ORDERS"}</span>
+        </div>
+        {shown.length === 0 ? (
+          <div className="staff-empty">
+            <IconCoffee size={42} stroke={1} />
+            <h2>All caught up.</h2>
+            <p>New orders will appear here when they come in.</p>
+          </div>
+        ) : (
+          <div className="order-grid">
+            {shown.map((order) => (
+              <article className="order-card" key={order.id}>
+                <div className="order-card-top">
+                  <div>
+                    <span className="eyebrow">{orderNumber(order.id)}</span>
+                    <h2>Table {tableLabel(order.tableNumber)}</h2>
+                  </div>
+                  <span className={`status status-${order.status.toLowerCase()}`}>
+                    {order.status === "Ready" ? "Ready for collection" : order.status}
+                  </span>
+                </div>
+                <div className="order-time">
+                  <IconClock size={15} />
+                  {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {order.customerName && ` · ${order.customerName}`}
+                </div>
+                <div className="staff-items">
+                  {order.items.map((item) => (
+                    <div key={item.id}>
+                      <span><b>{item.quantity}×</b> {item.name}</span>
+                      <span>{money(item.quantity * item.price)}</span>
+                    </div>
+                  ))}
+                </div>
+                {order.instructions && <div className="instructions"><strong>NOTE</strong> {order.instructions}</div>}
+                <div className="staff-payment">
+                  <span>{order.paymentMethod === "counter" ? "Pay at counter" : "Online · DEMO MODE"}</span>
+                  <strong>{order.paymentStatus}</strong>
+                </div>
+                <div className="staff-estimate">
+                  <label htmlFor={`estimate-${order.id}`}>PREP ESTIMATE <span>MINUTES</span></label>
+                  <div>
+                    <input
+                      id={`estimate-${order.id}`}
+                      type="number"
+                      min="1"
+                      max="240"
+                      step="1"
+                      placeholder="e.g. 15"
+                      value={estimateDrafts[order.id] ?? order.estimatedMinutes?.toString() ?? ""}
+                      onChange={(event) => setEstimateDrafts((current) => ({ ...current, [order.id]: event.target.value }))}
+                    />
+                    <button
+                      type="button"
+                      disabled={update.isPending || !/^[0-9]+$/.test(estimateDrafts[order.id] ?? order.estimatedMinutes?.toString() ?? "") || Number(estimateDrafts[order.id] ?? order.estimatedMinutes) < 1 || Number(estimateDrafts[order.id] ?? order.estimatedMinutes) > 240}
+                      onClick={() => update.mutate({ id: order.id, estimatedMinutes: Number(estimateDrafts[order.id] ?? order.estimatedMinutes) })}
+                    >
+                      Save estimate
+                    </button>
+                  </div>
+                </div>
+                {order.status !== "Ready" && (
+                  <button
+                    className="button button-gold full"
+                    disabled={update.isPending}
+                    onClick={() => update.mutate({ id: order.id, status: order.status === "Received" ? "Accepted" : order.status === "Accepted" ? "Preparing" : "Ready" })}
+                  >
+                    {order.status === "Received" ? "Accept order" : order.status === "Accepted" ? "Start preparing" : "Mark ready"}
+                    <IconArrowRight size={17} />
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
 
-export function StaffDailyReport() {
+export function StaffDailyReport({ entryAuthorized }: { entryAuthorized: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [today] = useState(getCafeDate);
   const date = isValidReportDate(searchParams.get("date")) ? searchParams.get("date")! : today;
@@ -500,7 +689,7 @@ export function StaffDailyReport() {
     { date },
     { enabled: access.data?.authorized === true, retry: false },
   );
-  if (access.isError || !access.data?.authorized) return null;
+  if (!entryAuthorized || access.isError || !access.data?.authorized) return null;
 
   return (
     <section className="daily-report" data-daily-report-print aria-labelledby="daily-report-title">
