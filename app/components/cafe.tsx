@@ -169,7 +169,7 @@ function Brand({ light = false }: { light?: boolean }) {
 function Header({ table, dark = false, editable = true }: { table: number; dark?: boolean; editable?: boolean }) {
   const { cart, setOpen, trackingId } = useContext(Cart);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
-  return <header className={`site-header ${dark ? "header-dark" : ""}`}><div className="header-inner"><Brand light={dark}/><nav className="header-nav"><Link to={`/menu?table=${table}`}>Our menu</Link><a href="/#our-story">Our story</a><Link to="/staff">For staff</Link></nav><div className="header-right">{trackingId && <Link className="track-order-link" to={`/order/${trackingId}?table=${table}`}>Track order <IconArrowRight size={15}/></Link>}<Link className="mobile-staff-link" to="/staff">Staff</Link><TablePicker table={table} editable={editable}/><button className="bag-button" onClick={() => setOpen(true)} aria-label={`Open cart, ${count} items`}><IconShoppingBag size={20} stroke={1.6}/><span>{count}</span></button></div></div></header>;
+  return <header className={`site-header ${dark ? "header-dark" : ""}`}><div className="header-inner"><Brand light={dark}/><nav className="header-nav"><Link to={`/menu?table=${table}`}>Our menu</Link><a href="/#our-story">Our story</a><Link to="/staff">For staff</Link></nav><div className="header-right">{trackingId && <Link className="track-order-link" to={`/order/${trackingId}?table=${table}`}>Track order</Link>}<Link className="mobile-staff-link" to="/staff">Staff</Link><TablePicker table={table} editable={editable}/><button className="bag-button" onClick={() => setOpen(true)} aria-label={`Open cart, ${count} items`}><IconShoppingBag size={20} stroke={1.6}/><span>{count}</span></button></div></div></header>;
 }
 function Footer() { return <footer className="footer" id="our-story"><div className="footer-inner"><div><Brand light/><p>Good things happen when you stay a little longer.</p></div><div className="footer-note">PULL UP A CHAIR. STAY A WHILE.<br/><span>Made for slow evenings & good company.</span></div></div><div className="footer-bottom"><span>© AFTER HOURS CAFÉ</span><span>CHAI, CONVERSATIONS & EVERYTHING IN BETWEEN</span></div></footer>; }
 function CartDrawer({ table }: { table: number }) {
@@ -426,7 +426,7 @@ export function Confirmation() {
           <span className="chai-steam">♨</span><IconCoffee size={72} stroke={1}/><i aria-hidden="true">✳</i><i aria-hidden="true">·</i>
         </div>
         <span className="eyebrow">A LITTLE THANK-YOU FROM US</span>
-        <h1>The counter was far.<br/><em>Your order wasn't.</em></h1>
+        <h1>The counter<br/>was far.<br/><em>Your order<br/>wasn't.</em></h1>
         <p>No queue, no long walk, just a few taps from your cozy little corner.<br/><br/>Your order is on its way. Enjoy your time here!</p>
         {order ? (
           <div className="confirmation-card">

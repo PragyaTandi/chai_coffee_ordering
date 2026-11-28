@@ -110,6 +110,25 @@
 .order-placed-content { align-items:center; gap:14px; text-align:center; }
 .order-placed-check { display:grid; place-items:center; width:62px; height:62px; border-radius:50%; background:#d9a441; color:#211e17; animation:order-placed-pop .45s cubic-bezier(.2,.8,.2,1) both; }
 .order-placed-title { color:#1f2020; font-family:"DM Serif Display",serif; font-size:26px; font-weight:400; }
+.site-header:not(.header-dark) .track-order-link { color:#775f38; font-weight:500; }
+.site-header:not(.header-dark) .track-order-link:hover { color:#51380f; }
+.site-header.header-dark .track-order-link { min-height:36px; padding:0 10px; border:1px solid #66645a; border-radius:3px; background:transparent; color:#d9a441; }
+.site-header.header-dark .track-order-link:hover { background:#272a28; color:#efc56d; }
+.site-header.header-dark .track-order-link:focus-visible { outline-color:#d9a441; }
+@media(max-width:600px) {
+  .site-header:not(.header-dark) .track-order-link { min-height:36px; padding:0; border:0; border-radius:0; background:transparent; font-size:9px; }
+  .site-header:not(.header-dark) .track-order-link:hover { background:transparent; }
+  .site-header:not(.header-dark) .track-order-link:focus-visible { outline:2px solid #775f38; outline-offset:2px; }
+  .site-header.header-dark .track-order-link { gap:4px; height:28px; min-height:28px; padding:0 5px; font-size:9px; }
+}
+@keyframes track-order-blink {
+  0%,100% { border-color:#66645a; box-shadow:0 0 0 0 #d9a44100; }
+  50% { border-color:#d9a441; box-shadow:0 0 0 2px #d9a44155; }
+}
+.site-header.header-dark .track-order-link { animation:track-order-blink 1.5s ease-in-out infinite; }
+@media(prefers-reduced-motion:reduce) {
+  .site-header.header-dark .track-order-link { animation:none; }
+}
 @keyframes order-placed-pop { 0% { opacity:0; transform:scale(.7); } 60% { opacity:1; transform:scale(1.12); } 100% { opacity:1; transform:scale(1); } }
 @media(prefers-reduced-motion:reduce) { .order-placed-check { animation:none; } }
 .table-field:focus,.checkout-form input:focus,.checkout-form textarea:focus,.payment-option:focus,.summary-card .button:focus { outline:2px solid #d9a441; outline-offset:3px; }
