@@ -6,7 +6,8 @@ export default defineEventHandler(async (event) => {
   if (origin) {
     let sameOrigin = false;
     try {
-      sameOrigin = new URL(origin).origin === getRequestURL(event).origin;
+      const requestOrigin = getRequestURL(event, { xForwardedHost: true, xForwardedProto: true }).origin;
+      sameOrigin = new URL(origin).origin === requestOrigin;
     } catch {
       sameOrigin = false;
     }
